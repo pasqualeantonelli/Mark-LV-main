@@ -146,7 +146,8 @@ def main():
     threading.Thread(target=worker, daemon=True, name="local-chat").start()
     if speech:
         threading.Thread(target=microphone, daemon=True, name="local-microphone").start()
-    ui.write_log(f"SYS: LOCAL Ollama ({args.model}). Tools: status, memory, notes, undo.")
+    ui.write_log(f"SYS: LOCAL Ollama ({args.model}). Tools: status, memory, notes, undo, web search/read.")
+    ui.write_log("SYS: Web tools use internet search and public pages; AI responses stay local.")
     ui.write_log("SYS: Vision, browser, plugins, phone dashboard and Gemini voice settings unavailable locally.")
     ui.set_state("LISTENING")
     try:

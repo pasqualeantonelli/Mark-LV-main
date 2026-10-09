@@ -127,12 +127,15 @@ def _get_ddgs():
         return DDGS
 
 
-def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
+def _ddg_search(query: str, max_results: int = 6, *, timeout: int = 10,
+                backend: str | None = None) -> list[dict]:
     DDGS = _get_ddgs()
     results = []
     try:
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=max_results):
+        # Local mode selects DuckDuckGo explicitly and never enters Gemini modes.
+        options = {"backend": backend} if backend else {}
+        with DDGS(timeout=timeout) as ddgs:
+            for r in ddgs.text(query, max_results=max_results, **options):
                 results.append({
                     "title":   r.get("title",  ""),
                     "snippet": r.get("body",   ""),

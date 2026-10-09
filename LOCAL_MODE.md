@@ -48,7 +48,11 @@ Local mode checks model capabilities and refuses remote/cloud models.
 - The original PyQt HUD, file-backed memory, undo stack and human confirmation
   gate are shared with the local backend. Local startup skips Gemini setup.
 - `core/local_backend.py` implements bounded Ollama chat and validated local
-  tools: system status, save/recall memory, write/delete notes, and undo.
+  tools: system status, save/recall memory, write/delete notes, undo, web search,
+  and public webpage reading.
+- `core/local_web.py` reuses the existing DDGS search helper directly, bypassing
+  all Gemini search modes. It reads the first search result to check stale
+  snippets, and exposes `read_webpage` for additional sources.
 - `core/tool_schema.py` adapts the Gemini-to-Ollama schema converter reviewed in
   [PR #112](https://github.com/FatihMakes/Mark-LV/pull/112), by Abhayraj69.
   The whole PR was not merged: it includes unrelated UI, routing, and cloud paths.
@@ -90,7 +94,7 @@ networks, images, configurations, GPU drivers or system Python were modified.
 ## Remaining limitations
 
 Local mode provides the listed tools, rather than full Gemini action parity.
-Screen/webcam vision, attachment processing, web search, browser automation,
+Screen/webcam vision, attachment processing, browser automation,
 cloud plugins, phone dashboard, wake-word gating, push-to-talk, proactive
 briefings and Gemini voice selection are unavailable. Unsupported HUD controls
 are disabled where applicable. Desktop shortcut and auto-start controls are
@@ -101,8 +105,43 @@ bounded notes and human confirmation constrain their effects.
 
 Memory is shared with the original app and is readable in the HUD. Undo is
 in-memory and lasts only for the current process. Conversation history retains
-six recent completed turns. No shell, container, network or service management
+six recent completed turns. No shell, container or service management
 tools are exposed to the local model.
+
+## Web search in local mode
+
+Restart the Mark-LV app to load the added tools; the launch commands are unchanged.
+Ask, for example: “What is the latest stable Python release? Search the web and
+verify the official release page, with a source link.” Ordinary timeless
+questions can still be answered offline.
+
+Search uses DuckDuckGo through the existing helper in `actions/web_search.py`.
+It needs no account, API key, new server, or changes to OpenMono's SearXNG.
+Queries go to DuckDuckGo and reading a result contacts that website. The AI
+model and speech engines remain local; Gemini is never used by these tools.
+
+Each search returns at most five results and reads the first result before
+answer generation. Each search/read worker has a hard 20-second deadline;
+search plus automatic reading can therefore take up to 40 seconds. Empty
+DuckDuckGo results are retried once against the same provider. Page downloads
+are limited to 256 KB and extracted text to 8,000 characters, with three
+redirects allowed. Only public HTTP/HTTPS text or HTML on ports 80/443 is accepted.
+Private addresses and redirects into local services are rejected. DNS addresses
+are validated and pinned for the connection while TLS certificates are checked.
+Scripts and embedded content are discarded; JavaScript-heavy, login-only or
+bot-blocked pages may not be readable.
+
+Answers use source links returned by the tools. An unrecognized citation triggers
+one correction attempt, and is refused if still unverified. Links are also
+appended if the model omits citations. If no live source was retrieved, the chat
+reports verification failure. This checks that cited URLs were retrieved;
+it does not guarantee every model interpretation is correct.
+
+Web text cannot authorize workstation changes. After web tools are used in a
+turn, memory writes, note changes and undo are blocked for that turn. Request
+those local changes in a separate message. HUD memory and confirmation controls
+remain available. Network access is required only for web tools and initial
+installation/model downloads.
 
 ## Verification and maintenance
 
@@ -118,7 +157,15 @@ SDK/key, and eSpeak audio transcribed by offline Whisper. A short offline speake
 recognition and perceived voice quality still need testing in your desktop session.
 The final Qwen2.5 7B live sequence passed chat, status, temporary note creation
 and undo in approximately 2–4 seconds per reply, with about 16 GiB RAM still
-available. Eight automated tests passed.
+available. The expanded suite has 19 passing automated tests, including public
+URL validation, redirects, byte/type limits, process deadlines, citations,
+search failure handling and blocked local mutations during web research.
+
+On October 9, 2026, the live web test searched DuckDuckGo, read the Python.org
+release page (following its redirect), and correctly answered Python 3.15.0
+with the retrieved source URL. The search index still listed an older version,
+so reading the live page was necessary. The local verification transcript is
+stored in `.local-data/web-verification.json`.
 
 To reinstall dependencies inside this project:
 
