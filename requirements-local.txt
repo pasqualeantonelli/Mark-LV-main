@@ -1,0 +1,8 @@
+# Local mode deliberately has no cloud SDK or cloud TTS dependency.
+PyQt6>=6.6,<7
+numpy>=1.24,<3
+requests>=2.31,<3
+psutil>=5.9,<8
+sounddevice>=0.4,<1
+faster-whisper>=1.1,<2
+jsonschema>=4,<5
