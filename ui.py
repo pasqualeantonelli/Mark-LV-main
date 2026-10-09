@@ -5081,6 +5081,11 @@ class MainWindow(QMainWindow):
         return {"ready": ready, "enabled": enabled, "awake": True}
 
     def _refresh_wake_btns(self):
+        if os.environ.get("MARK_LV_LOCAL") == "1":
+            if hasattr(self, "_wake_btn"):
+                self._wake_btn.setEnabled(False)
+                self._wake_btn.setToolTip("Unavailable in local mode")
+            return
         if not hasattr(self, '_wake_btn'):
             return
         st = self._wake_state()

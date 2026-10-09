@@ -1,3 +1,5 @@
+> **Installed local Ollama mode:** See [LOCAL_MODE.md](LOCAL_MODE.md) for the Fedora installation, offline voice, launch commands, tests, and supported features. Run `bash launch-local.sh` after starting `bash start-local-ollama.sh`.
+
 # ⚙️ MARK LV (55)
 ### The Ultimate Cross-Platform Personal AI Assistant — By FatihMakes
 

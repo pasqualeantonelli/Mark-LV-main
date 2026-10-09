@@ -34,7 +34,9 @@ class OfflineSpeech:
             rate = wav.getframerate()
             # eSpeak's streamed WAV uses an oversized header; read available bytes.
             audio = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
-        sd.play(audio, rate)
+        from core.audio_devices import resolve
+        from memory.config_manager import get_output_device
+        sd.play(audio, rate, device=resolve(get_output_device(), "output"))
         sd.wait()
 
     @staticmethod

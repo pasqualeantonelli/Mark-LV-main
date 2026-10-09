@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", action="store_true", help="Text terminal without HUD or microphone")
     parser.add_argument("--voice", action="store_true", help="Offline Whisper + eSpeak voice with HUD")
-    parser.add_argument("--model", default="qwen3:4b")
+    parser.add_argument("--model", default="qwen2.5:7b")
     parser.add_argument("--url", default="http://127.0.0.1:11434")
     parser.add_argument("--speech-model", type=Path, default=ROOT / ".local-data" / "whisper-base")
     args = parser.parse_args()
@@ -42,8 +42,17 @@ def main():
     os.environ["MARK_LV_LOCAL"] = "1"
     from ui import JarvisUI
     ui = JarvisUI(str(ROOT / "face.png"))
+    # The shared HUD includes cloud controls; mark unsupported controls explicitly.
+    from PyQt6.QtWidgets import QPushButton
+    unsupported = ("REMOTE CONTROL", "DESKTOP SHORTCUT", "AUTO-START", "CUSTOMISE",
+                   "PLUGIN", "WAKE", "PUSH-TO-TALK", "BRIEF")
+    for button in ui._win.findChildren(QPushButton):
+        if any(label in button.text().upper() for label in unsupported):
+            button.setEnabled(False)
+            button.setToolTip("Unavailable in local mode; see LOCAL_MODE.md")
+    ui._win._drop_zone.setEnabled(False)
+    ui._win._file_hint.setText("Attachments unavailable in local mode")
     confirm.bind(ui.show_confirm, ui.hide_confirm, ui.write_log)
-    undo.set_notifier(ui.write_log)
     pending = queue.Queue(maxsize=4)
     stop = threading.Event()
     cancelled = threading.Event()
@@ -55,6 +64,10 @@ def main():
             speech = OfflineSpeech(args.speech_model)
         except Exception as exc:
             ui.write_log(f"ERR: Voice unavailable: {exc}. Text mode remains available.")
+    if not speech:
+        ui._win._mute_btn.setEnabled(False)
+        ui._win._mute_btn.setText("TEXT MODE — MICROPHONE OFF")
+    ui.on_audio_device_change = lambda: ui.write_log("SYS: Speaker selection applies next reply; restart to change microphone.")
 
     def submit(text):
         if text.strip():
@@ -102,13 +115,13 @@ def main():
     def microphone():
         import numpy as np
         import sounddevice as sd
-        from core.audio_devices import resolve_input
+        from core.audio_devices import resolve
         from memory.config_manager import get_input_device
         # Half-duplex: audio is discarded during model replies and playback.
         frames, quiet, count = [], 0, 0
         try:
             with sd.InputStream(samplerate=16000, channels=1, dtype="float32",
-                                blocksize=1600, device=resolve_input(get_input_device())) as stream:
+                                blocksize=1600, device=resolve(get_input_device(), "input")) as stream:
                 while not stop.is_set():
                     audio, overflow = stream.read(1600)
                     if busy.is_set() or ui.muted:

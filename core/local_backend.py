@@ -26,7 +26,7 @@ DECLARATIONS = [
     declaration("save_memory", "Remember a fact explicitly requested by the user.",
                 {"key": STRING, "value": STRING}, ["key", "value"]),
     declaration("recall_memory", "Search persistent memories.", {"query": STRING}, ["query"]),
-    declaration("write_note", "Write a text note in Mark-LV's own notes folder, with undo.",
+    declaration("write_note", "Write a text note only when requested. Name must end in .txt. Undo is available.",
                 {"name": STRING, "text": STRING}, ["name", "text"]),
     declaration("delete_note", "Delete a Mark-LV note only after human confirmation on the HUD.",
                 {"name": STRING}, ["name"]),
@@ -105,27 +105,35 @@ class LocalTools:
 
 
 class LocalChat:
-    def __init__(self, url="http://127.0.0.1:11434", model="qwen3:4b", tools=None):
+    def __init__(self, url="http://127.0.0.1:11434", model="qwen2.5:7b", tools=None):
         parsed = urlparse(url)
         if (parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1")
                 or parsed.username or parsed.password or parsed.path not in ("", "/")
                 or parsed.query or parsed.fragment):
             raise ValueError("Local mode requires an HTTP loopback Ollama URL")
         self.url, self.model = url.rstrip("/"), model
+        if "cloud" in model.lower():
+            raise ValueError("Cloud model names are unavailable in local mode")
         self.tools = tools or LocalTools()
         self.session = requests.Session()
         self.session.trust_env = False
         self.turns = []
 
     def check(self):
-        response = self.session.post(self.url + "/api/show", json={"model": self.model}, timeout=10)
+        response = self.session.post(self.url + "/api/show", json={"model": self.model},
+                                     timeout=10, allow_redirects=False)
         response.raise_for_status()
+        if response.is_redirect:
+            raise RuntimeError("Ollama redirects are refused")
+        if response.json().get("remote_model") or response.json().get("remote_host"):
+            raise RuntimeError("Remote Ollama models are unavailable in local mode")
         if "tools" not in response.json().get("capabilities", []):
             raise RuntimeError(f"Model {self.model} does not advertise tool calling")
 
     def _system(self):
         return {"role": "system", "content": (
-            "You are JARVIS running fully locally. Be concise. Use the supplied tools for actions; "
+            "You are JARVIS running fully locally. Be concise. Answer greetings and ordinary "
+            "questions directly without tools. Use the supplied tools only for requested actions; "
             "never claim an action succeeded without its tool result. Confirmation can only be "
             "given by the human on the HUD. You cannot inspect images, cameras, attachments, "
             "browse the web, run shell commands, manage services or containers. "
@@ -134,7 +142,8 @@ class LocalChat:
 
     def reply(self, text, cancelled=lambda: False):
         messages = [self._system()] + [m for turn in self.turns[-6:] for m in turn]
-        turn = [{"role": "user", "content": text[:12000]}]
+        content = text[:12000]
+        turn = [{"role": "user", "content": content}]
         messages.extend(turn)
         for _ in range(6):
             if cancelled():
@@ -143,7 +152,7 @@ class LocalChat:
                 "model": self.model, "messages": messages,
                 "tools": gemini_tools_to_openai(DECLARATIONS), "stream": False,
                 "think": False, "keep_alive": "5m",
-                "options": {"num_ctx": 8192, "num_predict": 512, "num_thread": 4},
+                "options": {"num_ctx": 8192, "num_predict": 512, "num_thread": 4, "temperature": 0.2},
             }, timeout=(5, 180), allow_redirects=False)
             response.raise_for_status()
             if response.is_redirect:
@@ -151,12 +160,20 @@ class LocalChat:
             msg = response.json()["message"]
             msg = {k: msg[k] for k in ("role", "content", "tool_calls") if k in msg}
             msg["role"] = "assistant"
+            # Some Qwen templates prefill <think> even with think=false.
+            # Never speak that reasoning if an older template returns it in content.
+            if "</think>" in msg.get("content", ""):
+                msg["content"] = msg["content"].split("</think>", 1)[1].strip()
             messages.append(msg)
             turn.append(msg)
             if cancelled():
                 return ""
             calls = msg.get("tool_calls") or []
+            if len(calls) > 8:
+                raise RuntimeError("Too many tool calls in one reply; no actions from this reply were run")
             if not calls:
+                if not msg.get("content", "").strip() or "<think>" in msg.get("content", ""):
+                    raise RuntimeError("Model returned an empty or unfinished reply; retry or select another local model")
                 self.turns.append(turn)
                 self.turns = self.turns[-6:]
                 return msg.get("content", "")
